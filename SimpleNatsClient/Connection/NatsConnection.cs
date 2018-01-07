@@ -21,27 +21,29 @@ namespace SimpleNatsClient.Connection
         private readonly NatsParser _parser = new NatsParser();
         public ServerInfo ServerInfo { get; private set; }
 
-        public IConnectableObservable<Message> Messages { get; }
+        public IObservable<Message> Messages { get; }
 
         public NatsConnection(NatsConnectionOptions options)
         {
-            Messages = _parser.Messages
+            var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
                 .Publish();
 
-            var connect = Messages.OfType<Message<ServerInfo>>()
+            Messages = messages;
+            
+            var connect = messages.OfType<Message<ServerInfo>>()
                 .Do(m => ServerInfo = m.Data)
                 .Select(_ => Observable.FromAsync(ct => this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct)))
                 .Switch()
                 .Subscribe();
 
-            var pingpong = Messages.Where(m => m.Op == Ping)
+            var pingpong = messages.Where(m => m.Op == Ping)
                 .Subscribe(async _ => await Write(Pong, CancellationToken.None));
             
             _disposable = new CompositeDisposable(
                 connect,
                 pingpong,
-                Messages.Connect()
+                messages.Connect()
             );
         }
 
@@ -81,6 +83,13 @@ namespace SimpleNatsClient.Connection
         {
             var connection = new NatsConnection(options);
             connection.Connect(tcpConnection);
+            return connection;
+        }
+
+        public static NatsConnection Connect(string hostname, int port, NatsConnectionOptions options)
+        {
+            var connection = new NatsConnection(options);
+            connection.Connect(new TcpConnection(hostname, port));
             return connection;
         }
     }

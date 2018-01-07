@@ -9,7 +9,7 @@ namespace SimpleNatsClient.Connection
     public interface INatsConnection : IDisposable
     {
         ServerInfo ServerInfo { get; }
-        IConnectableObservable<Message> Messages { get; }
+        IObservable<Message> Messages { get; }
         Task Write(byte[] buffer, CancellationToken cancellationToken);
     }
 }
