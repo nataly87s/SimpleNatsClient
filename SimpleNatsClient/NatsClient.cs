@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
 using System.Text;
 using System.Threading;
@@ -15,48 +16,82 @@ namespace SimpleNatsClient
         private static readonly byte[] NewLine = Encoding.UTF8.GetBytes("\r\n");
 
         private readonly INatsConnection _connection;
+        private readonly IObservable<IncomingMessage> _inbox;
+        private readonly string _inboxPrefix = $"_INBOX.{Guid.NewGuid():N}.";
 
         public NatsClient(INatsConnection connection)
         {
             _connection = connection;
+            _inbox = GetSubscription(_inboxPrefix + "*").Publish().RefCount();
         }
 
-        public async Task Publish(string subject, byte[] data, CancellationToken cancellationToken = default (CancellationToken))
+        public string NewInbox()
         {
-            var message = $"PUB {subject} {data.Length}";
+            return _inboxPrefix + Guid.NewGuid().ToString("N");
+        }
+
+        public Task Publish(string subject, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return Publish(subject, null, null, cancellationToken);
+        }
+
+        public Task Publish(string subject, byte[] data, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return Publish(subject, null, data, cancellationToken);
+        }
+
+        public async Task Publish(string subject, string replyTo, byte[] data, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var dataLength = data?.Length ?? 0;
+            var message = string.IsNullOrEmpty(replyTo)
+                ? $"PUB {subject} {dataLength}"
+                : $"PUB {subject} {replyTo} {dataLength}";
             var encodedMessage = Encoding.UTF8.GetBytes(message);
 
-            var encoded = new byte[message.Length + (2 * NewLine.Length) + data.Length];
+            var encoded = new byte[message.Length + (2 * NewLine.Length) + dataLength];
             encodedMessage.CopyTo(encoded, 0);
             NewLine.CopyTo(encoded, encodedMessage.Length);
-            data.CopyTo(encoded, encodedMessage.Length + NewLine.Length);
+            if (dataLength > 0) data.CopyTo(encoded, encodedMessage.Length + NewLine.Length);
             NewLine.CopyTo(encoded, encoded.Length - NewLine.Length);
 
             await _connection.Write(encoded, cancellationToken);
         }
 
+        public Task<IncomingMessage> Request(string subject, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return Request(subject, null, cancellationToken);
+        }
+
+        public async Task<IncomingMessage> Request(string subject, byte[] data, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var inbox = NewInbox();
+            var reply = _inbox.FirstAsync(x => x.Subject == inbox).ToTask(cancellationToken);
+            await Publish(subject, inbox, data, cancellationToken);
+            return await reply;
+        }
+
         public IObservable<IncomingMessage> GetSubscription(string subject)
         {
-            var sid = Guid.NewGuid().ToString();            
+            var sid = Guid.NewGuid().ToString("N");
             return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}"))
-                .SelectMany(_ => GetSubscription(subject, sid))                
+                .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Finally(async () => await _connection.Write($"UNSUB {sid}"));
         }
 
         public IObservable<IncomingMessage> GetSubscription(string subject, int messageCount)
         {
-            var sid = Guid.NewGuid().ToString();            
+            var sid = Guid.NewGuid().ToString("N");
             return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}"))
                 .SelectMany(_ => _connection.Write($"UNSUB {sid} {messageCount}").ToObservable())
-                .SelectMany(_ => GetSubscription(subject, sid))
+                .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Take(messageCount);
         }
 
-        private IObservable<IncomingMessage> GetSubscription(string subject, string sid)
+        private IObservable<IncomingMessage> GetMessagesForSubscription(string sid)
         {
             return _connection.Messages.OfType<Message<IncomingMessage>>()
                 .Select(x => x.Data)
-                .Where(x => x.Subject == subject && x.SubscriptionId == sid);
+                .Where(x => x.SubscriptionId == sid);
         }
 
         public void Dispose()
