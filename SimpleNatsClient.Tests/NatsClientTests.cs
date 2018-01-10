@@ -82,7 +82,7 @@ namespace SimpleNatsClient.Tests
 
             mockNatsConnection.Verify(x =>
                 x.Write(
-                    It.Is<byte[]>(data => Encoding.UTF8.GetBytes($"UNSUB {subscriptionId}\r\n").SequenceEqual(data)),
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId}\r\n")),
                     It.IsAny<CancellationToken>()));
         }
 
@@ -105,7 +105,7 @@ namespace SimpleNatsClient.Tests
                 .Returns<byte[], CancellationToken>((data, _) =>
                 {
                     var message = Encoding.UTF8.GetString(data);
-                    var match = Regex.Match(message, $"^SUB {subject} ([^ \r\n].+)\r\n$");
+                    var match = Regex.Match(message, $"^SUB {subject} ([^ \r\n].+)\r\n");
                     if (match.Success)
                     {
                         subscriptionId = match.Groups[1].Value;
@@ -139,7 +139,7 @@ namespace SimpleNatsClient.Tests
 
             mockNatsConnection.Verify(x =>
                 x.Write(
-                    It.Is<byte[]>(data => Encoding.UTF8.GetBytes($"UNSUB {subscriptionId} {count}\r\n").SequenceEqual(data)),
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId} {count}\r\n")),
                     It.IsAny<CancellationToken>()));
         }
 

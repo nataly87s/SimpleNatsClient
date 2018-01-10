@@ -80,11 +80,24 @@ namespace SimpleNatsClient
 
         public IObservable<IncomingMessage> GetSubscription(string subject, int messageCount)
         {
+            if (messageCount <= 0)
+            {
+                throw new ArgumentException("message count should be greater than 0", nameof(messageCount));
+            }
+            
             var sid = Guid.NewGuid().ToString("N");
-            return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}"))
-                .SelectMany(_ => _connection.Write($"UNSUB {sid} {messageCount}").ToObservable())
+            var currentCount = 0;
+            return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}"))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
-                .Take(messageCount);
+                .Do(_ => currentCount++)
+                .Take(messageCount)
+                .Finally(async () =>
+                {
+                    if (currentCount < messageCount)
+                    {
+                        await _connection.Write($"UNSUB {sid}");
+                    }
+                });
         }
 
         private IObservable<IncomingMessage> GetMessagesForSubscription(string sid)
