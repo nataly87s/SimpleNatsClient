@@ -77,7 +77,14 @@ namespace SimpleNatsClient
             var sid = Guid.NewGuid().ToString("N");
             return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}"))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
-                .Finally(async () => await _connection.Write($"UNSUB {sid}"));
+                .Finally(async () =>
+                {
+                    try
+                    {
+                        await _connection.Write($"UNSUB {sid}");
+                    } 
+                    catch {}
+                });
         }
 
         public IObservable<IncomingMessage> GetSubscription(string subject, int messageCount)
@@ -97,7 +104,11 @@ namespace SimpleNatsClient
                 {
                     if (currentCount < messageCount)
                     {
-                        await _connection.Write($"UNSUB {sid}");
+                        try
+                        {
+                            await _connection.Write($"UNSUB {sid}");
+                        }
+                        catch {}
                     }
                 });
         }

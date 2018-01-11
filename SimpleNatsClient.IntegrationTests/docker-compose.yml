@@ -1,0 +1,7 @@
+version: '3.4'
+
+services:
+  nats:
+    image: nats:1.0.4-linux
+    ports: 
+      - "4222:4222"

@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleNatsClient", "SimpleN
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleNatsClient.Tests", "SimpleNatsClient.Tests\SimpleNatsClient.Tests.csproj", "{77AE0C45-990B-4B5D-9168-E5FC4E84545E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleNatsClient.IntegrationTests", "SimpleNatsClient.IntegrationTests\SimpleNatsClient.IntegrationTests.csproj", "{4546D3FF-6AFB-4AA1-986D-5E3DF06B2712}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{77AE0C45-990B-4B5D-9168-E5FC4E84545E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{77AE0C45-990B-4B5D-9168-E5FC4E84545E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{77AE0C45-990B-4B5D-9168-E5FC4E84545E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4546D3FF-6AFB-4AA1-986D-5E3DF06B2712}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4546D3FF-6AFB-4AA1-986D-5E3DF06B2712}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4546D3FF-6AFB-4AA1-986D-5E3DF06B2712}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4546D3FF-6AFB-4AA1-986D-5E3DF06B2712}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
