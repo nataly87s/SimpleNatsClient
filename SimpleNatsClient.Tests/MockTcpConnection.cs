@@ -1,14 +1,17 @@
 ﻿using System;
+using System.Net.Security;
 using System.Reactive;
 using System.Reactive.Subjects;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using SimpleNatsClient.Connection;
 
 namespace SimpleNatsClient.Tests
 {
-    public class MockTcpConnection : ITcpConnection
+    internal class MockTcpConnection : ITcpConnection
     {
+        public bool IsSsl { get; private set; }
         public bool IsDisposed { get; private set; }
         public byte[] ReadBuffer { get; set; }
         
@@ -23,13 +26,20 @@ namespace SimpleNatsClient.Tests
             IsDisposed = true;
         }
 
-        public Task Write(byte[] buffer, CancellationToken cancellationToken = default(CancellationToken))
+        public Task MakeSsl(RemoteCertificateValidationCallback remoteCertificateValidationCallback,
+            X509Certificate2Collection certificates)
+        {
+            IsSsl = true;
+            return Task.CompletedTask;
+        }
+
+        public Task Write(byte[] buffer, CancellationToken cancellationToken)
         {
             _writeSubject.OnNext(buffer);
             return Task.CompletedTask;
         }
 
-        public Task<int> Read(byte[] buffer, CancellationToken cancellationToken = default(CancellationToken))
+        public Task<int> Read(byte[] buffer, CancellationToken cancellationToken)
         {
             try
             {

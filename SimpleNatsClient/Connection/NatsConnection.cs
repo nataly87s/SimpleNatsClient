@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,7 +22,7 @@ namespace SimpleNatsClient.Connection
 
         public IObservable<Message> Messages { get; }
 
-        public NatsConnection(NatsConnectionOptions options)
+        internal NatsConnection(NatsConnectionOptions options)
         {
             var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
@@ -33,7 +32,14 @@ namespace SimpleNatsClient.Connection
             
             var connect = messages.OfType<Message<ServerInfo>>()
                 .Do(m => ServerInfo = m.Data)
-                .Select(_ => Observable.FromAsync(ct => this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct)))
+                .Select(_ => Observable.FromAsync(async ct =>
+                {
+                    if (options.SslRequired)
+                    {
+                        await _tcpConnection.MakeSsl(options.RemoteCertificateValidationCallback, options.Certificates);
+                    }
+                    await this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct);
+                }))
                 .Switch()
                 .Subscribe();
 
@@ -47,12 +53,8 @@ namespace SimpleNatsClient.Connection
             );
         }
 
-        public void Connect(ITcpConnection tcpConnection)
+        internal void Connect(ITcpConnection tcpConnection)
         {
-            if (_tcpConnection != null)
-            {
-                throw new InvalidOperationException("Already connected to server");
-            }
             _tcpConnection = tcpConnection;
             var buffer = new byte[512];
             var reader = Observable.FromAsync(async ct =>
@@ -79,18 +81,17 @@ namespace SimpleNatsClient.Connection
             _disposable.Dispose();
         }
 
-        public static NatsConnection Connect(ITcpConnection tcpConnection, NatsConnectionOptions options)
+        internal static NatsConnection Connect(ITcpConnection tcpConnection, NatsConnectionOptions options)
         {
             var connection = new NatsConnection(options);
             connection.Connect(tcpConnection);
             return connection;
         }
 
-        public static NatsConnection Connect(string hostname, int port, NatsConnectionOptions options)
+        public static NatsConnection Connect(NatsConnectionOptions options)
         {
-            var connection = new NatsConnection(options);
-            connection.Connect(new TcpConnection(hostname, port));
-            return connection;
+            var tcpConnection = new TcpConnection(options.Hostname, options.Port);
+            return Connect(tcpConnection, options);
         }
     }
 }

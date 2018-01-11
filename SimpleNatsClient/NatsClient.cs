@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using SimpleNatsClient.Connection;
 using SimpleNatsClient.Extensions;
 using SimpleNatsClient.Messages;
+
+[assembly: InternalsVisibleTo("SimpleNatsClient.Tests")]
 
 namespace SimpleNatsClient
 {
@@ -84,7 +86,7 @@ namespace SimpleNatsClient
             {
                 throw new ArgumentException("message count should be greater than 0", nameof(messageCount));
             }
-            
+
             var sid = Guid.NewGuid().ToString("N");
             var currentCount = 0;
             return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}"))
@@ -110,6 +112,12 @@ namespace SimpleNatsClient
         public void Dispose()
         {
             _connection.Dispose();
+        }
+
+        public static NatsClient Connect(NatsConnectionOptions options)
+        {
+            var natsConnection = NatsConnection.Connect(options);
+            return new NatsClient(natsConnection);
         }
     }
 }

@@ -39,11 +39,43 @@ namespace SimpleNatsClient.Tests
                 Assert.Equal(JObject.FromObject(options), sendOptions);
 
                 Assert.Equal(JObject.FromObject(serverInfo), JObject.FromObject(connection.ServerInfo));
+                
+                Assert.False(tcpConnection.IsSsl, "should not use ssl tcp connection");
             }
 
-            Assert.True(tcpConnection.IsDisposed);
+            Assert.True(tcpConnection.IsDisposed, "should dispose tcp connection");
         }
 
+        [Fact(DisplayName = "should use ssl")]
+        public async Task ConnectWithSsl()
+        {
+            var serverInfo = new ServerInfo{ SslRequired = true };
+            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
+
+            var tcpConnection = new MockTcpConnection
+            {
+                ReadBuffer = Encoding.UTF8.GetBytes(infoMessage)
+            };
+
+            var options = new NatsConnectionOptions { SslRequired = true };
+            using (var connection = NatsConnection.Connect(tcpConnection, options))
+            {
+                var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
+                var connectionMessage = Encoding.UTF8.GetString(wrote);
+
+                Assert.StartsWith("CONNECT ", connectionMessage);
+
+                var sendOptions = JObject.Parse(connectionMessage.Substring(8));
+                Assert.Equal(JObject.FromObject(options), sendOptions);
+
+                Assert.Equal(JObject.FromObject(serverInfo), JObject.FromObject(connection.ServerInfo));
+                
+                Assert.True(tcpConnection.IsSsl, "should use ssl tcp connection");
+            }
+
+            Assert.True(tcpConnection.IsDisposed, "should dispose tcp connection");
+        }
+        
         [Fact(DisplayName = "should read messages from server")]
         public async Task ReadMessages()
         {
@@ -74,7 +106,7 @@ namespace SimpleNatsClient.Tests
                 Assert.Equal(expectedMessage, Encoding.UTF8.GetString(incomingMessage.Payload));
             }
 
-            Assert.True(tcpConnection.IsDisposed);
+            Assert.True(tcpConnection.IsDisposed, "should dispose tcp connection");
         }
 
         [Fact(DisplayName = "should write to server")]
@@ -91,7 +123,7 @@ namespace SimpleNatsClient.Tests
                 Assert.Equal(expectedMessage, wrote);
             }
 
-            Assert.True(tcpConnection.IsDisposed);
+            Assert.True(tcpConnection.IsDisposed, "should dispose tcp connection");
         }
 
         [Fact(DisplayName = "should reply to ping request")]
@@ -111,7 +143,7 @@ namespace SimpleNatsClient.Tests
                 Assert.Equal("PONG\r\n", pongMessage);
             }
 
-            Assert.True(tcpConnection.IsDisposed);
+            Assert.True(tcpConnection.IsDisposed, "should dispose tcp connection");
         }
     }
 }
