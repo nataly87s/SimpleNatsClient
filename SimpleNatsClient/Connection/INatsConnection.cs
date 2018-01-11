@@ -11,6 +11,7 @@ namespace SimpleNatsClient.Connection
         ServerInfo ServerInfo { get; }
         NatsConnectionState ConnectionState { get; }
         IObservable<Message> Messages { get; }
+        IObservable<ServerInfo> OnConnect { get; }
         Task Write(byte[] buffer, CancellationToken cancellationToken);
     }
 }

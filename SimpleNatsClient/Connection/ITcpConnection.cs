@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace SimpleNatsClient.Connection
 {
+    internal delegate ITcpConnection TcpConnectionProvider(string host, int port);
     internal interface ITcpConnection : IDisposable
     {
         Task MakeSsl(RemoteCertificateValidationCallback remoteCertificateValidationCallback, X509Certificate2Collection certificates);

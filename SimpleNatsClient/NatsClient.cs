@@ -25,7 +25,11 @@ namespace SimpleNatsClient
         public NatsClient(INatsConnection connection)
         {
             Connection = connection;
-            _inbox = GetSubscription(_inboxPrefix + "*").Publish().RefCount();
+            _inbox = Connection.OnConnect
+                .Select(_ => GetSubscription(_inboxPrefix + "*"))
+                .Switch()
+                .Publish()
+                .RefCount();
         }
 
         public string NewInbox()
@@ -76,7 +80,7 @@ namespace SimpleNatsClient
         public IObservable<IncomingMessage> GetSubscription(string subject)
         {
             var sid = Guid.NewGuid().ToString("N");
-            return Observable.FromAsync(() => Connection.Write($"SUB {subject} {sid}"))
+            return Observable.FromAsync(ct => Connection.Write($"SUB {subject} {sid}", ct))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Finally(async () =>
                 {
@@ -97,7 +101,7 @@ namespace SimpleNatsClient
 
             var sid = Guid.NewGuid().ToString("N");
             var currentCount = 0;
-            return Observable.FromAsync(() => Connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}"))
+            return Observable.FromAsync(ct => Connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}", ct))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Do(_ => currentCount++)
                 .Take(messageCount)
@@ -126,9 +130,9 @@ namespace SimpleNatsClient
             Connection.Dispose();
         }
 
-        public static NatsClient Connect(NatsConnectionOptions options)
+        public static async Task<NatsClient> Connect(NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var natsConnection = NatsConnection.Connect(options);
+            var natsConnection = await NatsConnection.Connect(options, cancellationToken);
             return new NatsClient(natsConnection);
         }
     }

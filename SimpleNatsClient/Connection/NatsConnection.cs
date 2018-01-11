@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
+using System.Reactive.Threading.Tasks;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,15 +18,26 @@ namespace SimpleNatsClient.Connection
         private const string Ping = "PING";
         
         private readonly CompositeDisposable _disposable;
-        private ITcpConnection _tcpConnection;
+        private readonly Subject<ServerInfo> _onConnect = new Subject<ServerInfo>();
         private readonly NatsParser _parser = new NatsParser();
+        private readonly TcpConnectionProvider _tcpConnectionProvider;
+        private readonly NatsConnectionOptions _natsConnectionOptions;
+        private ITcpConnection _tcpConnection;
+        private IDisposable _readFromStream;
+
         public ServerInfo ServerInfo { get; private set; }
-        public NatsConnectionState ConnectionState { get; private set; }
+        
+        public NatsConnectionState ConnectionState { get; private set; } = NatsConnectionState.Disconnected;
 
         public IObservable<Message> Messages { get; }
 
-        internal NatsConnection(NatsConnectionOptions options)
+        public IObservable<ServerInfo> OnConnect => ConnectionState == NatsConnectionState.Connected ? _onConnect.StartWith(ServerInfo) : _onConnect;
+
+        internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options)
         {
+            _tcpConnectionProvider = tcpConnectionProvider;
+            _natsConnectionOptions = options;
+            
             var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
                 .Publish();
@@ -33,7 +46,7 @@ namespace SimpleNatsClient.Connection
             
             var connect = messages.OfType<Message<ServerInfo>>()
                 .Do(m => ServerInfo = m.Data)
-                .Select(_ => Observable.FromAsync(async ct =>
+                .Select(m => Observable.FromAsync(async ct =>
                 {
                     if (ConnectionState == NatsConnectionState.Connected) return;
                     ConnectionState = NatsConnectionState.Connecting;
@@ -43,6 +56,7 @@ namespace SimpleNatsClient.Connection
                     }
                     await this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct);
                     ConnectionState = NatsConnectionState.Connected;
+                    _onConnect.OnNext(m.Data);
                 }))
                 .Switch()
                 .Finally(() => ConnectionState = NatsConnectionState.Disconnected)
@@ -58,18 +72,24 @@ namespace SimpleNatsClient.Connection
             );
         }
 
-        internal void Connect(ITcpConnection tcpConnection)
+        internal async Task Connect(CancellationToken cancellationToken)
         {
-            _tcpConnection = tcpConnection;
+            ConnectionState = NatsConnectionState.Connecting;
+            _readFromStream?.Dispose();
+            _tcpConnection?.Dispose();
+            _parser.Reset();
+            
+            _tcpConnection = _tcpConnectionProvider(_natsConnectionOptions.Hostname, _natsConnectionOptions.Port);
+            var connected = OnConnect.FirstAsync().ToTask(cancellationToken);
+            
             var buffer = new byte[512];
-            var reader = Observable.FromAsync(async ct =>
+            _readFromStream = Observable.FromAsync(async ct =>
             {
                 var count = await _tcpConnection.Read(buffer, ct);
                 if (count > 0) _parser.Parse(buffer, 0, count);
             }).Repeat().Subscribe();
 
-            _disposable.Add(tcpConnection);
-            _disposable.Add(reader);
+            await connected;
         }
         
         public async Task Write(byte[] buffer, CancellationToken cancellationToken)
@@ -83,20 +103,22 @@ namespace SimpleNatsClient.Connection
 
         public void Dispose()
         {
+            _tcpConnection?.Dispose();
+            _readFromStream?.Dispose();
+
             _disposable.Dispose();
         }
 
-        internal static NatsConnection Connect(ITcpConnection tcpConnection, NatsConnectionOptions options)
+        internal static async Task<NatsConnection> Connect(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var connection = new NatsConnection(options);
-            connection.Connect(tcpConnection);
+            var connection = new NatsConnection(tcpConnectionProvider, options);
+            await connection.Connect(cancellationToken);
             return connection;
         }
 
-        public static NatsConnection Connect(NatsConnectionOptions options)
+        public static Task<NatsConnection> Connect(NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var tcpConnection = new TcpConnection(options.Hostname, options.Port);
-            return Connect(tcpConnection, options);
+            return Connect((host, port) => new TcpConnection(host, port), options, cancellationToken);
         }
     }
 }

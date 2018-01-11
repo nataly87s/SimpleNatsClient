@@ -1,10 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net.Security;
 using System.Reactive;
 using System.Reactive.Subjects;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using SimpleNatsClient.Connection;
 
 namespace SimpleNatsClient.Tests
@@ -13,7 +16,18 @@ namespace SimpleNatsClient.Tests
     {
         public bool IsSsl { get; private set; }
         public bool IsDisposed { get; private set; }
-        public byte[] ReadBuffer { get; set; }
+        public Queue<byte[]> ReadBuffer { get; } = new Queue<byte[]>();
+        private byte[] _currentBuffer;
+
+        public MockTcpConnection() : this(new ServerInfo())
+        {
+        }
+
+        public MockTcpConnection(ServerInfo serverInfo)
+        {
+            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
+            ReadBuffer.Enqueue(Encoding.UTF8.GetBytes(infoMessage));
+        }
         
         private readonly ReplaySubject<Unit> _readSubject = new ReplaySubject<Unit>();
         public IObservable<Unit> OnRead => _readSubject;
@@ -43,16 +57,16 @@ namespace SimpleNatsClient.Tests
         {
             try
             {
-                if (ReadBuffer == null || ReadBuffer.Length == 0)
+                if (_currentBuffer == null && !ReadBuffer.TryDequeue(out _currentBuffer))
                 {
-                    return Task.Delay(5000, cancellationToken).ContinueWith(_ => 0, cancellationToken);
-                }
+                    return Task.Delay(5000, cancellationToken).ContinueWith(_ => 0, cancellationToken);                    
+                } 
                 
-                var length = Math.Min(ReadBuffer.Length, buffer.Length);
-                Array.Copy(ReadBuffer, buffer, length);
+                var length = Math.Min(_currentBuffer.Length, buffer.Length);
+                Array.Copy(_currentBuffer, buffer, length);
 
-                ReadBuffer = ReadBuffer.Length > buffer.Length
-                    ? new ArraySegment<byte>(ReadBuffer, length, ReadBuffer.Length - length).ToArray()
+                _currentBuffer = _currentBuffer.Length > buffer.Length
+                    ? new ArraySegment<byte>(_currentBuffer, length, _currentBuffer.Length - length).ToArray()
                     : null;
 
                 return Task.FromResult(length);

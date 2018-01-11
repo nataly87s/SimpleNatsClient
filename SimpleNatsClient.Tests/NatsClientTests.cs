@@ -27,6 +27,7 @@ namespace SimpleNatsClient.Tests
             var size = Encoding.UTF8.GetByteCount(message);
             var expectedData = Encoding.UTF8.GetBytes($"PUB {subject} {size}\r\n{message}\r\n");
             var mockNatsConnection = new Mock<INatsConnection>();
+            mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {
@@ -64,6 +65,7 @@ namespace SimpleNatsClient.Tests
                 });
 
             mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
+            mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {
@@ -115,6 +117,7 @@ namespace SimpleNatsClient.Tests
                 });
 
             mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
+            mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {
@@ -178,6 +181,7 @@ namespace SimpleNatsClient.Tests
                 });
 
             mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
+            mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {

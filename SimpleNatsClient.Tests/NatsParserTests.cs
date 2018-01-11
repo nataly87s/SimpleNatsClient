@@ -11,7 +11,7 @@ namespace SimpleNatsClient.Tests
 {
     public class NatsParserTests
     {
-        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(50);
+        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(100);
 
         [Fact(DisplayName = "should emit message")]
         public async Task EmitsMessage()
@@ -120,6 +120,32 @@ namespace SimpleNatsClient.Tests
             Assert.Equal(message, parsedMessage.Message);
             Assert.Null(parsedMessage.Payload);
 
+        }
+
+        [Theory(DisplayName = "should reset message")]
+        [InlineData("partial message")]
+        [InlineData("MSG subject 20\r\npartial payload")]
+        public async Task Reset(string partialMessage)
+        {
+            var partialBuffer = Encoding.UTF8.GetBytes(partialMessage);
+            
+            const string message = "some message";
+            var buffer = Encoding.UTF8.GetBytes(message + "\r\n");
+
+            // Arrange
+            var parser = new NatsParser();
+            var parsedMessageTask = parser.Messages.FirstAsync()
+                .Timeout(_timeout).ToTask();
+
+            // Act
+            parser.Parse(partialBuffer, 0, partialBuffer.Length);
+            parser.Reset();
+            parser.Parse(buffer, 0, buffer.Length);
+            var parsedMessage = await parsedMessageTask;
+
+            // Assert;
+            Assert.Equal(message, parsedMessage.Message);
+            Assert.Null(parsedMessage.Payload);
         }
     }
 }

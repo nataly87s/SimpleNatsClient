@@ -92,5 +92,14 @@ namespace SimpleNatsClient.Connection
             _expectedPayloadSize = 0;
             Parse(buffer, offset, count);
         }
+
+        public void Reset()
+        {
+            _builder.Clear();
+            _state = State.Message;
+            _nextMessage = null;
+            _nextPayload = null;
+            _expectedPayloadSize = 0;
+        }
     }
 }

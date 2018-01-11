@@ -4,7 +4,6 @@ using System.Reactive.Threading.Tasks;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SimpleNatsClient.Connection;
 using SimpleNatsClient.Messages;
@@ -14,21 +13,17 @@ namespace SimpleNatsClient.Tests
 {
     public class NatsConnectionTests
     {
-        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(50);
+        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(200);
 
         [Fact(DisplayName = "should send connect message after recieving info message")]
         public async Task ConnectAfterInfo()
         {
             var serverInfo = new ServerInfo();
-            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
-
-            var tcpConnection = new MockTcpConnection
-            {
-                ReadBuffer = Encoding.UTF8.GetBytes(infoMessage)
-            };
+            var tcpConnection = new MockTcpConnection(serverInfo);
 
             var options = new NatsConnectionOptions();
-            using (var connection = NatsConnection.Connect(tcpConnection, options))
+            var cancellationTokenSource = new CancellationTokenSource(_timeout);
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationTokenSource.Token))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -50,15 +45,11 @@ namespace SimpleNatsClient.Tests
         public async Task ConnectWithSsl()
         {
             var serverInfo = new ServerInfo{ SslRequired = true };
-            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
-
-            var tcpConnection = new MockTcpConnection
-            {
-                ReadBuffer = Encoding.UTF8.GetBytes(infoMessage)
-            };
+            var tcpConnection = new MockTcpConnection(serverInfo);
 
             var options = new NatsConnectionOptions { SslRequired = true };
-            using (var connection = NatsConnection.Connect(tcpConnection, options))
+            var cancellationTokenSource = new CancellationTokenSource(_timeout);
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationTokenSource.Token))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -84,21 +75,21 @@ namespace SimpleNatsClient.Tests
             const string replyTo = "reply_to";
             const string expectedMessage = "expected message\r\nwith new lines";
             var size = Encoding.UTF8.GetByteCount(expectedMessage);
-            var tcpConnection = new MockTcpConnection
-            {
-                ReadBuffer = Encoding.UTF8.GetBytes($"MSG {subject} {subscription} {replyTo} {size}\r\n{expectedMessage}\r\n")
-            };
+            var tcpConnection = new MockTcpConnection();
+            tcpConnection.ReadBuffer.Enqueue(Encoding.UTF8.GetBytes($"MSG {subject} {subscription} {replyTo} {size}\r\n{expectedMessage}\r\n"));
 
             var options = new NatsConnectionOptions();
-            using (var connection = new NatsConnection(options))
+            using (var connection = new NatsConnection((h, p) => tcpConnection, options))
             {
-                var messageTask = connection.Messages.Timeout(_timeout).FirstAsync().ToTask();
-                connection.Connect(tcpConnection);
+                var messageTask = connection.Messages.OfType<Message<IncomingMessage>>()
+                    .Timeout(_timeout)
+                    .FirstAsync()
+                    .ToTask();
+                var cancellationTokenSource = new CancellationTokenSource(_timeout);
+                await connection.Connect(cancellationTokenSource.Token);
                 
                 var message = await messageTask;
-                Assert.IsType<Message<IncomingMessage>>(message);
-
-                var incomingMessage = ((Message<IncomingMessage>) message).Data;
+                var incomingMessage = message.Data;
                 Assert.Equal(subject, incomingMessage.Subject);
                 Assert.Equal(subscription, incomingMessage.SubscriptionId);
                 Assert.Equal(replyTo, incomingMessage.ReplyTo);
@@ -115,10 +106,11 @@ namespace SimpleNatsClient.Tests
             var tcpConnection = new MockTcpConnection();
             var options = new NatsConnectionOptions();
             var expectedMessage = Encoding.UTF8.GetBytes("some message");
-            using (var connection = NatsConnection.Connect(tcpConnection, options))
+            var cancellationTokenSource = new CancellationTokenSource(_timeout);
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationTokenSource.Token))
             {
                 await connection.Write(expectedMessage, CancellationToken.None);
-                var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
+                var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
 
                 Assert.Equal(expectedMessage, wrote);
             }
@@ -129,15 +121,14 @@ namespace SimpleNatsClient.Tests
         [Fact(DisplayName = "should reply to ping request")]
         public async Task PingPong()
         {
-            var tcpConnection = new MockTcpConnection
-            {
-                ReadBuffer = Encoding.UTF8.GetBytes("PING\r\n")
-            };
+            var tcpConnection = new MockTcpConnection();
+            tcpConnection.ReadBuffer.Enqueue(Encoding.UTF8.GetBytes("PING\r\n"));
 
             var options = new NatsConnectionOptions();
-            using (var connection = NatsConnection.Connect(tcpConnection, options))
+            var cancellationTokenSource = new CancellationTokenSource(_timeout);
+            using (await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationTokenSource.Token))
             {
-                var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
+                var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
                 var pongMessage = Encoding.UTF8.GetString(wrote);
 
                 Assert.Equal("PONG\r\n", pongMessage);
