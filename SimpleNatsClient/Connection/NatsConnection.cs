@@ -19,6 +19,7 @@ namespace SimpleNatsClient.Connection
         private ITcpConnection _tcpConnection;
         private readonly NatsParser _parser = new NatsParser();
         public ServerInfo ServerInfo { get; private set; }
+        public NatsConnectionState ConnectionState { get; private set; }
 
         public IObservable<Message> Messages { get; }
 
@@ -34,13 +35,17 @@ namespace SimpleNatsClient.Connection
                 .Do(m => ServerInfo = m.Data)
                 .Select(_ => Observable.FromAsync(async ct =>
                 {
+                    if (ConnectionState == NatsConnectionState.Connected) return;
+                    ConnectionState = NatsConnectionState.Connecting;
                     if (options.SslRequired)
                     {
                         await _tcpConnection.MakeSsl(options.RemoteCertificateValidationCallback, options.Certificates);
                     }
                     await this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct);
+                    ConnectionState = NatsConnectionState.Connected;
                 }))
                 .Switch()
+                .Finally(() => ConnectionState = NatsConnectionState.Disconnected)
                 .Subscribe();
 
             var pingpong = messages.Where(m => m.Op == Ping)

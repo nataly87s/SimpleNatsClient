@@ -17,13 +17,14 @@ namespace SimpleNatsClient
     {
         private static readonly byte[] NewLine = Encoding.UTF8.GetBytes("\r\n");
 
-        private readonly INatsConnection _connection;
         private readonly IObservable<IncomingMessage> _inbox;
         private readonly string _inboxPrefix = $"_INBOX.{Guid.NewGuid():N}.";
+        
+        public INatsConnection Connection { get; }
 
         public NatsClient(INatsConnection connection)
         {
-            _connection = connection;
+            Connection = connection;
             _inbox = GetSubscription(_inboxPrefix + "*").Publish().RefCount();
         }
 
@@ -56,7 +57,7 @@ namespace SimpleNatsClient
             if (dataLength > 0) data.CopyTo(encoded, encodedMessage.Length + NewLine.Length);
             NewLine.CopyTo(encoded, encoded.Length - NewLine.Length);
 
-            await _connection.Write(encoded, cancellationToken);
+            await Connection.Write(encoded, cancellationToken);
         }
 
         public Task<IncomingMessage> Request(string subject, CancellationToken cancellationToken = default(CancellationToken))
@@ -75,13 +76,13 @@ namespace SimpleNatsClient
         public IObservable<IncomingMessage> GetSubscription(string subject)
         {
             var sid = Guid.NewGuid().ToString("N");
-            return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}"))
+            return Observable.FromAsync(() => Connection.Write($"SUB {subject} {sid}"))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Finally(async () =>
                 {
                     try
                     {
-                        await _connection.Write($"UNSUB {sid}");
+                        await Connection.Write($"UNSUB {sid}");
                     } 
                     catch {}
                 });
@@ -96,7 +97,7 @@ namespace SimpleNatsClient
 
             var sid = Guid.NewGuid().ToString("N");
             var currentCount = 0;
-            return Observable.FromAsync(() => _connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}"))
+            return Observable.FromAsync(() => Connection.Write($"SUB {subject} {sid}\r\nUNSUB {sid} {messageCount}"))
                 .SelectMany(_ => GetMessagesForSubscription(sid))
                 .Do(_ => currentCount++)
                 .Take(messageCount)
@@ -106,7 +107,7 @@ namespace SimpleNatsClient
                     {
                         try
                         {
-                            await _connection.Write($"UNSUB {sid}");
+                            await Connection.Write($"UNSUB {sid}");
                         }
                         catch {}
                     }
@@ -115,14 +116,14 @@ namespace SimpleNatsClient
 
         private IObservable<IncomingMessage> GetMessagesForSubscription(string sid)
         {
-            return _connection.Messages.OfType<Message<IncomingMessage>>()
+            return Connection.Messages.OfType<Message<IncomingMessage>>()
                 .Select(x => x.Data)
                 .Where(x => x.SubscriptionId == sid);
         }
 
         public void Dispose()
         {
-            _connection.Dispose();
+            Connection.Dispose();
         }
 
         public static NatsClient Connect(NatsConnectionOptions options)
