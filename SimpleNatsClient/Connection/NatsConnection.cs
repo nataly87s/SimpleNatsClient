@@ -119,6 +119,7 @@ namespace SimpleNatsClient.Connection
                     if (i < _natsConnectionOptions.MaxConnectRetry)
                     {
                         i++;
+                        await Task.Delay(_natsConnectionOptions.ConnectRetryDelay, cancellationToken);
                         continue;
                     }
 

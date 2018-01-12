@@ -171,6 +171,7 @@ namespace SimpleNatsClient.Tests
             var options = new NatsConnectionOptions
             {
                 MaxConnectRetry = maxRetry,
+                ConnectRetryDelay = TimeSpan.Zero,
             };
 
             var currentRetryCount = 0;
@@ -204,6 +205,7 @@ namespace SimpleNatsClient.Tests
             var options = new NatsConnectionOptions
             {
                 MaxConnectRetry = maxRetry,
+                ConnectRetryDelay = TimeSpan.Zero,
             };
 
             var currentRetryCount = 0;

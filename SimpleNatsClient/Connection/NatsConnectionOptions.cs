@@ -23,6 +23,9 @@ namespace SimpleNatsClient.Connection
         [JsonIgnore]
         public int MaxConnectRetry { get; set; } = 10;
 
+        [JsonIgnore]
+        public TimeSpan ConnectRetryDelay { get; set; } = TimeSpan.FromSeconds(5);
+
         [JsonProperty("verbose")]
         public bool Verbose { get; set; }
 
