@@ -1,0 +1,21 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: microsoft/dotnet:2.0.5-sdk-2.1.4-stretch
+      - image: nats:1.0.4-linux
+    steps:
+      - checkout
+      - run: 
+          name: Build solution
+          command: |
+            dotnet restore
+            dotnet build
+      - run:
+          name: Unit Tests
+          working_directory: ./SimpleNatsClient.Tests
+          command: dotnet test --no-build
+      - run:
+          name: Integration Tests
+          working_directory: ./SimpleNatsClient.IntegrationTests
+          command: dotnet test --no-build
