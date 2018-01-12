@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net.Security;
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using Newtonsoft.Json;
 
@@ -44,13 +45,15 @@ namespace SimpleNatsClient.Connection
         public string Name { get; set; } = "SimpleNatsClient";
 
         [JsonProperty("lang")]
-        public string Language { get; set; } = "csharp";
+        public string Language => "csharp";
+
+        private static readonly string _version = Assembly.GetAssembly(typeof(NatsClient)).GetName().Version.ToString();
 
         [JsonProperty("version")]
-        public string Version { get; set; } = "0.1.0";
+        public string Version => _version;
 
         [JsonProperty("protocol")]
-        public int Protocol { get; set; } = 1;
+        public int Protocol => 1;
 
         [JsonIgnore]
         public RemoteCertificateValidationCallback RemoteCertificateValidationCallback { get; set; } = RemoteCertificateValidation;
