@@ -13,7 +13,7 @@ namespace SimpleNatsClient.Tests
 {
     public class NatsConnectionTests
     {
-        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(200);
+        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);
 
         [Fact(DisplayName = "should send connect message after recieving info message")]
         public async Task ConnectAfterInfo()

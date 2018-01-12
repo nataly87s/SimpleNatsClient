@@ -17,7 +17,7 @@ namespace SimpleNatsClient.Tests
 {
     public class NatsClientTests
     {
-        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(100);
+        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);
 
         [Fact(DisplayName = "should publish message")]
         public async Task PublishTest()
