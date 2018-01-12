@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -14,9 +15,11 @@ namespace SimpleNatsClient.Connection
 {
     public class NatsConnection : INatsConnection
     {
-        private static readonly byte[] Pong = Encoding.UTF8.GetBytes("PONG\r\n");
-        private const string Ping = "PING";
-        
+        private const string PongOp = "PONG";
+        private static readonly byte[] Pong = Encoding.UTF8.GetBytes($"{PongOp}\r\n");
+        private const string PingOp = "PING";
+        private static readonly byte[] Ping = Encoding.UTF8.GetBytes($"{PingOp}\r\n");
+
         private readonly CompositeDisposable _disposable;
         private readonly Subject<ServerInfo> _onConnect = new Subject<ServerInfo>();
         private readonly NatsParser _parser = new NatsParser();
@@ -26,24 +29,26 @@ namespace SimpleNatsClient.Connection
         private IDisposable _readFromStream;
 
         public ServerInfo ServerInfo { get; private set; }
-        
+
         public NatsConnectionState ConnectionState { get; private set; } = NatsConnectionState.Disconnected;
 
         public IObservable<Message> Messages { get; }
 
-        public IObservable<ServerInfo> OnConnect => ConnectionState == NatsConnectionState.Connected ? _onConnect.StartWith(ServerInfo) : _onConnect;
+        public IObservable<ServerInfo> OnConnect => ConnectionState == NatsConnectionState.Connected
+            ? _onConnect.StartWith(ServerInfo)
+            : _onConnect;
 
         internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options)
         {
             _tcpConnectionProvider = tcpConnectionProvider;
             _natsConnectionOptions = options;
-            
+
             var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
                 .Publish();
 
             Messages = messages;
-            
+
             var connect = messages.OfType<Message<ServerInfo>>()
                 .Do(m => ServerInfo = m.Data)
                 .Select(m => Observable.FromAsync(async ct =>
@@ -59,50 +64,99 @@ namespace SimpleNatsClient.Connection
                     _onConnect.OnNext(m.Data);
                 }))
                 .Switch()
-                .Finally(() => ConnectionState = NatsConnectionState.Disconnected)
                 .Subscribe();
 
-            var pingpong = messages.Where(m => m.Op == Ping)
+            var pingpong = messages.Where(m => m.Op == PingOp)
                 .Subscribe(async _ => await Write(Pong, CancellationToken.None));
-            
+
+            var reconnect = OnConnect
+                .Select(_ => Observable.FromAsync(ct => Write(Ping, ct))
+                    .DelaySubscription(options.PingPongInterval)
+                    .SelectMany(Messages)
+                    .FirstAsync(m => m.Op == PongOp)
+                    .Timeout(options.PingTimeout)
+                    .Repeat()
+                    .IgnoreElements()
+                    .Select(__ => Unit.Default)
+                    .OnErrorResumeNext(Observable.Empty<Unit>())
+                    .Concat(Observable.FromAsync(Connect)))
+                .Switch()
+                .Finally(Dispose)
+                .Subscribe();
+
             _disposable = new CompositeDisposable(
                 connect,
                 pingpong,
-                messages.Connect()
+                reconnect,
+                messages.Connect(),
+                _parser
             );
         }
 
         internal async Task Connect(CancellationToken cancellationToken)
         {
+            if (_disposable.IsDisposed)
+            {
+                throw new ObjectDisposedException("NatsConnection");
+            }
+            
             ConnectionState = NatsConnectionState.Connecting;
             _readFromStream?.Dispose();
             _tcpConnection?.Dispose();
             _parser.Reset();
-            
-            _tcpConnection = _tcpConnectionProvider(_natsConnectionOptions.Hostname, _natsConnectionOptions.Port);
-            var connected = OnConnect.FirstAsync().ToTask(cancellationToken);
-            
-            var buffer = new byte[512];
-            _readFromStream = Observable.FromAsync(async ct =>
-            {
-                var count = await _tcpConnection.Read(buffer, ct);
-                if (count > 0) _parser.Parse(buffer, 0, count);
-            }).Repeat().Subscribe();
 
-            await connected;
+            var i = 0;
+            while (true)
+            {
+                try
+                {
+                    _tcpConnection =
+                        _tcpConnectionProvider(_natsConnectionOptions.Hostname, _natsConnectionOptions.Port);
+                    break;
+                }
+                catch
+                {
+                    if (i < _natsConnectionOptions.MaxConnectRetry)
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    Dispose();
+                    throw;
+                }
+            }
+
+            var buffer = new byte[512];
+            _readFromStream = Observable.FromAsync(ct => _tcpConnection.Read(buffer, ct))
+                .Where(count => count > 0)
+                .Do(count => _parser.Parse(buffer, 0, count))
+                .Repeat()
+                .Subscribe();
+
+            await OnConnect.FirstAsync().ToTask(cancellationToken);
         }
-        
+
         public async Task Write(byte[] buffer, CancellationToken cancellationToken)
         {
             if (_tcpConnection == null)
             {
                 throw new InvalidOperationException("Not connected to NATS server");
             }
+            if (_disposable.IsDisposed)
+            {
+                throw new ObjectDisposedException("NatsConnection");
+            }
+
             await _tcpConnection.Write(buffer, cancellationToken);
         }
 
         public void Dispose()
         {
+            if (_disposable.IsDisposed) return;
+
+            ConnectionState = NatsConnectionState.Disconnected;
+
             _tcpConnection?.Dispose();
             _readFromStream?.Dispose();
 

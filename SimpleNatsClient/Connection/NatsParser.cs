@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SimpleNatsClient.Connection
 {
-    public class NatsParser
+    public class NatsParser : IDisposable
     {
         private enum State
         {
@@ -14,12 +14,12 @@ namespace SimpleNatsClient.Connection
         }
 
         private readonly StringBuilder _builder;
-        
+
         private State _state = State.Message;
         private string _nextMessage;
         private byte[] _nextPayload;
         private int _expectedPayloadSize;
-        
+
         private readonly Subject<(string Message, byte[] Payload)> _messages = new Subject<(string Message, byte[] Payload)>();
         public IObservable<(string Message, byte[] Payload)> Messages => _messages;
 
@@ -28,12 +28,12 @@ namespace SimpleNatsClient.Connection
         {
             _builder = new StringBuilder(capacity);
         }
-        
+
         public void Parse(byte[] buffer, int offset, int count)
         {
             switch (_state)
             {
-                case State.Message: 
+                case State.Message:
                     ParseMessage(buffer, offset, count);
                     break;
                 case State.Payload:
@@ -50,7 +50,7 @@ namespace SimpleNatsClient.Connection
                 if (current == '\n')
                 {
                     if (_builder.Length == 0) continue;
-                    
+
                     var message = _builder.ToString();
                     _builder.Clear();
 
@@ -63,12 +63,12 @@ namespace SimpleNatsClient.Connection
                         Parse(buffer, i + 1, count - i - 1);
                         return;
                     }
-                    
+
                     _messages.OnNext((message, null));
                 }
                 else if (current != '\r')
                 {
-                    _builder.Append((char)current);
+                    _builder.Append((char) current);
                 }
             }
         }
@@ -78,14 +78,14 @@ namespace SimpleNatsClient.Connection
             Array.Copy(buffer, offset, _nextPayload, _nextPayload.Length - _expectedPayloadSize, Math.Min(count, _expectedPayloadSize));
             offset += _expectedPayloadSize;
             _expectedPayloadSize -= count;
-            
+
             if (_expectedPayloadSize > 0) return;
-            
+
             _state = State.Message;
             _messages.OnNext((_nextMessage, _nextPayload));
             _nextMessage = null;
             _nextPayload = null;
-            
+
             if (_expectedPayloadSize == 0) return;
 
             count = 0 - _expectedPayloadSize;
@@ -100,6 +100,11 @@ namespace SimpleNatsClient.Connection
             _nextMessage = null;
             _nextPayload = null;
             _expectedPayloadSize = 0;
+        }
+
+        public void Dispose()
+        {
+            _messages.OnCompleted();
         }
     }
 }

@@ -16,22 +16,19 @@ namespace SimpleNatsClient.Tests
     {
         public bool IsSsl { get; private set; }
         public bool IsDisposed { get; private set; }
-        public Queue<byte[]> ReadBuffer { get; } = new Queue<byte[]>();
+        public Queue<byte[]> Queue { get; } = new Queue<byte[]>();
         private byte[] _currentBuffer;
 
-        public MockTcpConnection() : this(new ServerInfo())
+        public MockTcpConnection(ServerInfo serverInfo = null)
         {
+            serverInfo = serverInfo ?? new ServerInfo();
+            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
+            Queue.Enqueue(Encoding.UTF8.GetBytes(infoMessage));
         }
 
-        public MockTcpConnection(ServerInfo serverInfo)
-        {
-            var infoMessage = $"INFO {JsonConvert.SerializeObject(serverInfo)}\r\n";
-            ReadBuffer.Enqueue(Encoding.UTF8.GetBytes(infoMessage));
-        }
-        
         private readonly ReplaySubject<Unit> _readSubject = new ReplaySubject<Unit>();
         public IObservable<Unit> OnRead => _readSubject;
-        
+
         private readonly ReplaySubject<byte[]> _writeSubject = new ReplaySubject<byte[]>();
         public IObservable<byte[]> OnWrite => _writeSubject;
 
@@ -57,11 +54,11 @@ namespace SimpleNatsClient.Tests
         {
             try
             {
-                if (_currentBuffer == null && !ReadBuffer.TryDequeue(out _currentBuffer))
+                if (_currentBuffer == null && !Queue.TryDequeue(out _currentBuffer))
                 {
-                    return Task.Delay(5000, cancellationToken).ContinueWith(_ => 0, cancellationToken);                    
-                } 
-                
+                    return Task.Delay(5000, cancellationToken).ContinueWith(_ => 0, cancellationToken);
+                }
+
                 var length = Math.Min(_currentBuffer.Length, buffer.Length);
                 Array.Copy(_currentBuffer, buffer, length);
 
