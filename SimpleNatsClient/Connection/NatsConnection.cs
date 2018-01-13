@@ -24,7 +24,7 @@ namespace SimpleNatsClient.Connection
         private readonly Subject<ServerInfo> _onConnect = new Subject<ServerInfo>();
         private readonly NatsParser _parser = new NatsParser();
         private readonly TcpConnectionProvider _tcpConnectionProvider;
-        private readonly NatsConnectionOptions _natsConnectionOptions;
+        private readonly NatsConnectionOptions _connectionOptions;
         private ITcpConnection _tcpConnection;
         private IDisposable _readFromStream;
 
@@ -41,10 +41,11 @@ namespace SimpleNatsClient.Connection
         internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options)
         {
             _tcpConnectionProvider = tcpConnectionProvider;
-            _natsConnectionOptions = options;
+            _connectionOptions = options;
 
             var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
+                .Retry()
                 .Publish();
 
             Messages = messages;
@@ -64,10 +65,13 @@ namespace SimpleNatsClient.Connection
                     _onConnect.OnNext(m.Data);
                 }))
                 .Switch()
+                .Retry()
                 .Subscribe();
 
             var pingpong = messages.Where(m => m.Op == PingOp)
-                .Subscribe(async _ => await Write(Pong, CancellationToken.None));
+                .SelectMany(_ => Observable.FromAsync(ct => Write(Pong, ct)))
+                .Retry()
+                .Subscribe();
 
             var reconnect = OnConnect
                 .Select(_ => Observable.FromAsync(ct => Write(Ping, ct))
@@ -78,9 +82,10 @@ namespace SimpleNatsClient.Connection
                     .Repeat()
                     .IgnoreElements()
                     .Select(__ => Unit.Default)
-                    .OnErrorResumeNext(Observable.Empty<Unit>())
+                    .Catch()                    
                     .Concat(Observable.FromAsync(Connect)))
                 .Switch()
+                .Catch()
                 .Finally(Dispose)
                 .Subscribe();
 
@@ -99,7 +104,7 @@ namespace SimpleNatsClient.Connection
             {
                 throw new ObjectDisposedException("NatsConnection");
             }
-            
+
             ConnectionState = NatsConnectionState.Connecting;
             _readFromStream?.Dispose();
             _tcpConnection?.Dispose();
@@ -110,16 +115,15 @@ namespace SimpleNatsClient.Connection
             {
                 try
                 {
-                    _tcpConnection =
-                        _tcpConnectionProvider(_natsConnectionOptions.Hostname, _natsConnectionOptions.Port);
+                    _tcpConnection = _tcpConnectionProvider(_connectionOptions.Hostname, _connectionOptions.Port);
                     break;
                 }
                 catch
                 {
-                    if (i < _natsConnectionOptions.MaxConnectRetry)
+                    if (i < _connectionOptions.MaxConnectRetry)
                     {
                         i++;
-                        await Task.Delay(_natsConnectionOptions.ConnectRetryDelay, cancellationToken);
+                        await Task.Delay(_connectionOptions.ConnectRetryDelay, cancellationToken);
                         continue;
                     }
 
@@ -133,6 +137,7 @@ namespace SimpleNatsClient.Connection
                 .Where(count => count > 0)
                 .Do(count => _parser.Parse(buffer, 0, count))
                 .Repeat()
+                .Catch()
                 .Subscribe();
 
             await OnConnect.FirstAsync().ToTask(cancellationToken);
