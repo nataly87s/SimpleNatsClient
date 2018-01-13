@@ -61,11 +61,13 @@ namespace SimpleNatsClient.Tests
                         subscriptionId = match.Groups[1].Value;
                         resetEvent.Set();
                     }
+
                     return Task.CompletedTask;
                 });
 
             mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
             mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
+            mockNatsConnection.Setup(x => x.ConnectionState).Returns(NatsConnectionState.Connected);
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {
@@ -84,14 +86,72 @@ namespace SimpleNatsClient.Tests
 
             mockNatsConnection.Verify(x =>
                 x.Write(
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).StartsWith($"SUB {subject} ")),
+                    It.IsAny<CancellationToken>()), Times.Once);
+
+            mockNatsConnection.Verify(x =>
+                x.Write(
                     It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId}\r\n")),
                     It.IsAny<CancellationToken>()));
         }
 
+        [Fact(DisplayName = "should resubscribe after client reconnects")]
+        public void ResubscribeTest()
+        {
+            const int reconnectCount = 3;
+            const string subject = "some_subject";
+            string subscriptionId = null;
+            var resetEvent = new AutoResetEvent(false);
+
+            var messageSubject = new Subject<Message<IncomingMessage>>();
+            var mockNatsConnection = new Mock<INatsConnection>();
+
+            mockNatsConnection
+                .Setup(x => x.Write(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+                .Returns<byte[], CancellationToken>((data, _) =>
+                {
+                    var message = Encoding.UTF8.GetString(data);
+                    var match = Regex.Match(message, $"^SUB {subject} ([^ \r\n]+)\r\n$");
+                    if (match.Success)
+                    {
+                        subscriptionId = match.Groups[1].Value;
+                        resetEvent.Set();
+                    }
+
+                    return Task.CompletedTask;
+                });
+
+            var onConnectMock = new Subject<ServerInfo>();
+            mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
+            mockNatsConnection.Setup(x => x.OnConnect).Returns(onConnectMock);
+            mockNatsConnection.Setup(x => x.ConnectionState).Returns(NatsConnectionState.Connected);
+
+            using (var client = new NatsClient(mockNatsConnection.Object))
+            using (client.GetSubscription(subject).Subscribe())
+            {
+                for (var i = 0; i < reconnectCount; i++)
+                {
+                    onConnectMock.OnNext(new ServerInfo());
+                    resetEvent.WaitOne(_timeout);
+                }
+            }
+
+            mockNatsConnection.Verify(x =>
+                x.Write(
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).StartsWith($"SUB {subject} ")),
+                    It.IsAny<CancellationToken>()), Times.Exactly(reconnectCount));
+
+            mockNatsConnection.Verify(x =>
+                x.Write(
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId}\r\n")),
+                    It.IsAny<CancellationToken>()), Times.Once);
+        }
+
         [Theory(DisplayName = "should auto unsubscribe")]
-        [InlineData(1)]
-        [InlineData(5)]
-        public async Task AutoUnsubscribeTest(int count)
+        [InlineData(1, 2)]
+        [InlineData(3, 4)]
+        [InlineData(3, 2)]
+        public async Task AutoUnsubscribeTest(int messageCount, int take)
         {
             const string subject = "some_subject";
             const string paload = "some payload";
@@ -113,15 +173,18 @@ namespace SimpleNatsClient.Tests
                         subscriptionId = match.Groups[1].Value;
                         resetEvent.Set();
                     }
+
                     return Task.CompletedTask;
                 });
 
             mockNatsConnection.Setup(x => x.Messages).Returns(messageSubject);
             mockNatsConnection.Setup(x => x.OnConnect).Returns(Observable.Return(new ServerInfo()));
+            mockNatsConnection.Setup(x => x.ConnectionState).Returns(NatsConnectionState.Connected);
 
             using (var client = new NatsClient(mockNatsConnection.Object))
             {
-                var subscription = client.GetSubscription(subject, count)
+                var subscription = client.GetSubscription(subject, messageCount)
+                    .Take(take)
                     .ToArray()
                     .Timeout(_timeout)
                     .ToTask();
@@ -131,19 +194,25 @@ namespace SimpleNatsClient.Tests
                 var otherMessage = new IncomingMessage(subject, "other_subscription", string.Empty, encodedPayload.Length, encodedPayload);
                 messageSubject.OnNext(Message.From("MSG", otherMessage));
                 var incomingMessage = new IncomingMessage(subject, subscriptionId, string.Empty, encodedPayload.Length, encodedPayload);
-                for (var i = 0; i < count + 1; i++)
+                for (var i = 0; i < messageCount + 1; i++)
                 {
                     messageSubject.OnNext(Message.From("MSG", incomingMessage));
                 }
 
                 var messages = await subscription;
-                Assert.Equal(Enumerable.Repeat(incomingMessage, count), messages);
+                Assert.Equal(Enumerable.Repeat(incomingMessage, Math.Min(take, messageCount)), messages);
             }
 
             mockNatsConnection.Verify(x =>
                 x.Write(
-                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId} {count}\r\n")),
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId} {messageCount}\r\n")),
                     It.IsAny<CancellationToken>()));
+
+            mockNatsConnection.Verify(
+                x => x.Write(
+                    It.Is<byte[]>(data => Encoding.UTF8.GetString(data).Contains($"UNSUB {subscriptionId}\r\n")),
+                    It.IsAny<CancellationToken>()),
+                Times.Exactly(take < messageCount ? 1 : 0));
         }
 
         [Fact]
@@ -177,6 +246,7 @@ namespace SimpleNatsClient.Tests
                             subscriptionId = match.Groups[1].Value;
                         }
                     }
+
                     return Task.CompletedTask;
                 });
 

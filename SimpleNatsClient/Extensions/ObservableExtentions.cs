@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 
 namespace SimpleNatsClient.Extensions
@@ -16,6 +17,16 @@ namespace SimpleNatsClient.Extensions
             {
                 onError(e);
                 return Observable.Empty<TResult>();
+            });
+        }
+
+        public static IObservable<TResult> With<TResult, TOther>(this IObservable<TResult> @this, IObservable<TOther> context)
+        {
+            return Observable.Create<TResult>(observer =>
+            {
+                var mainSubscription = @this.Subscribe(observer);
+                var contextSubscription = context.Subscribe(_ => { }, observer.OnError);
+                return new CompositeDisposable(contextSubscription, mainSubscription);
             });
         }
     }
