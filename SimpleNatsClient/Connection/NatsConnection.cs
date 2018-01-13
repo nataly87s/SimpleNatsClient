@@ -24,7 +24,7 @@ namespace SimpleNatsClient.Connection
         private readonly Subject<ServerInfo> _onConnect = new Subject<ServerInfo>();
         private readonly NatsParser _parser = new NatsParser();
         private readonly TcpConnectionProvider _tcpConnectionProvider;
-        private readonly NatsConnectionOptions _connectionOptions;
+        private readonly NatsOptions _options;
         private ITcpConnection _tcpConnection;
         private IDisposable _readFromStream;
 
@@ -38,10 +38,10 @@ namespace SimpleNatsClient.Connection
             ? _onConnect.StartWith(ServerInfo)
             : _onConnect;
 
-        internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options)
+        internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsOptions options)
         {
             _tcpConnectionProvider = tcpConnectionProvider;
-            _connectionOptions = options;
+            _options = options;
 
             var messages = _parser.Messages
                 .Select(tuple => MessageDeserializer.Deserialize(tuple.Message, tuple.Payload))
@@ -56,11 +56,11 @@ namespace SimpleNatsClient.Connection
                 {
                     if (ConnectionState == NatsConnectionState.Connected) return;
                     ConnectionState = NatsConnectionState.Connecting;
-                    if (options.SslRequired)
+                    if (options.ConnectionOptions.SslRequired)
                     {
                         await _tcpConnection.MakeSsl(options.RemoteCertificateValidationCallback, options.Certificates);
                     }
-                    await this.Write($"CONNECT {JsonConvert.SerializeObject(options)}", ct);
+                    await this.Write($"CONNECT {JsonConvert.SerializeObject(options.ConnectionOptions)}", ct);
                     ConnectionState = NatsConnectionState.Connected;
                     _onConnect.OnNext(m.Data);
                 }))
@@ -115,15 +115,15 @@ namespace SimpleNatsClient.Connection
             {
                 try
                 {
-                    _tcpConnection = _tcpConnectionProvider(_connectionOptions.Hostname, _connectionOptions.Port);
+                    _tcpConnection = _tcpConnectionProvider(_options.Hostname, _options.Port);
                     break;
                 }
                 catch
                 {
-                    if (i < _connectionOptions.MaxConnectRetry)
+                    if (i < _options.MaxConnectRetry)
                     {
                         i++;
-                        await Task.Delay(_connectionOptions.ConnectRetryDelay, cancellationToken);
+                        await Task.Delay(_options.ConnectRetryDelay, cancellationToken);
                         continue;
                     }
 
@@ -169,14 +169,14 @@ namespace SimpleNatsClient.Connection
             _disposable.Dispose();
         }
 
-        internal static async Task<NatsConnection> Connect(TcpConnectionProvider tcpConnectionProvider, NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        internal static async Task<NatsConnection> Connect(TcpConnectionProvider tcpConnectionProvider, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
             var connection = new NatsConnection(tcpConnectionProvider, options);
             await connection.Connect(cancellationToken);
             return connection;
         }
 
-        public static Task<NatsConnection> Connect(NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        public static Task<NatsConnection> Connect(NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
             return Connect((host, port) => new TcpConnection(host, port), options, cancellationToken);
         }

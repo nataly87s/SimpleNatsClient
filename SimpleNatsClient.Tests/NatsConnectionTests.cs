@@ -23,7 +23,7 @@ namespace SimpleNatsClient.Tests
 
             var options = new NatsConnectionOptions();
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationToken))
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, new NatsOptions(options), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -51,7 +51,7 @@ namespace SimpleNatsClient.Tests
 
             var options = new NatsConnectionOptions {SslRequired = true};
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationToken))
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, new NatsOptions(options), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -82,8 +82,7 @@ namespace SimpleNatsClient.Tests
             tcpConnection.Queue.Enqueue(
                 Encoding.UTF8.GetBytes($"MSG {subject} {subscription} {replyTo} {size}\r\n{expectedMessage}\r\n"));
 
-            var options = new NatsConnectionOptions();
-            using (var connection = new NatsConnection((h, p) => tcpConnection, options))
+            using (var connection = new NatsConnection((h, p) => tcpConnection, new NatsOptions()))
             {
                 var messageTask = connection.Messages.OfType<Message<IncomingMessage>>()
                     .Timeout(_timeout)
@@ -108,10 +107,9 @@ namespace SimpleNatsClient.Tests
         public async Task WriteMessages()
         {
             var tcpConnection = new MockTcpConnection();
-            var options = new NatsConnectionOptions();
             var expectedMessage = Encoding.UTF8.GetBytes("some message");
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationToken))
+            using (var connection = await NatsConnection.Connect((h, p) => tcpConnection, new NatsOptions(), cancellationToken))
             {
                 await connection.Write(expectedMessage, CancellationToken.None);
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
@@ -128,9 +126,8 @@ namespace SimpleNatsClient.Tests
             var tcpConnection = new MockTcpConnection();
             tcpConnection.Queue.Enqueue(Encoding.UTF8.GetBytes("PING\r\n"));
 
-            var options = new NatsConnectionOptions();
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (await NatsConnection.Connect((h, p) => tcpConnection, options, cancellationToken))
+            using (await NatsConnection.Connect((h, p) => tcpConnection, new NatsOptions(), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
                 var pongMessage = Encoding.UTF8.GetString(wrote);
@@ -145,7 +142,7 @@ namespace SimpleNatsClient.Tests
         public async Task Reconnect()
         {
             const int reconnectCount = 5;
-            var options = new NatsConnectionOptions
+            var options = new NatsOptions
             {
                 PingTimeout = TimeSpan.FromMilliseconds(5),
                 PingPongInterval = TimeSpan.FromMilliseconds(5),
@@ -168,7 +165,7 @@ namespace SimpleNatsClient.Tests
         [InlineData(2, 2)]
         public async Task Retry(int maxRetry, int retryCount)
         {
-            var options = new NatsConnectionOptions
+            var options = new NatsOptions
             {
                 MaxConnectRetry = maxRetry,
                 ConnectRetryDelay = TimeSpan.Zero,
@@ -202,7 +199,7 @@ namespace SimpleNatsClient.Tests
         public async Task RetryFailed()
         {
             const int maxRetry = 3;
-            var options = new NatsConnectionOptions
+            var options = new NatsOptions
             {
                 MaxConnectRetry = maxRetry,
                 ConnectRetryDelay = TimeSpan.Zero,

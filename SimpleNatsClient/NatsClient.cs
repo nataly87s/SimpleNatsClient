@@ -141,7 +141,7 @@ namespace SimpleNatsClient
             Connection.Dispose();
         }
 
-        public static async Task<NatsClient> Connect(NatsConnectionOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        public static async Task<NatsClient> Connect(NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
             var natsConnection = await NatsConnection.Connect(options, cancellationToken);
             return new NatsClient(natsConnection);

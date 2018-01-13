@@ -22,13 +22,13 @@ namespace SimpleNatsClient.IntegrationTests
             string[] payloads = {"some payload", "some other payload"};
 
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject)
                     .Take(payloads.Length)
                     .ToArray().ToTask(cancellationToken);
 
-                using (var publishClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+                using (var publishClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
                 {
                     foreach (var payload in payloads)
                     {
@@ -51,13 +51,13 @@ namespace SimpleNatsClient.IntegrationTests
             const string subject = "some_subject";
             string[] payloads = {"some payload", "some other payload"};
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject, 1)
                     .ToArray()
                     .ToTask(cancellationToken);
 
-                using (var publishClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+                using (var publishClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
                 {
                     foreach (var payload in payloads)
                     {
@@ -79,14 +79,14 @@ namespace SimpleNatsClient.IntegrationTests
             const string subject = "some_subject";
             const string reply = "some reply";
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
             {
                 var subscription = subscribeClient.GetSubscription(subject, 1)
                     .SelectMany(message =>
                         Observable.FromAsync(ct => subscribeClient.Publish(message.ReplyTo, reply, ct)));
 
                 using (subscription.Subscribe())
-                using (var requestClient = await NatsClient.Connect(new NatsConnectionOptions(), cancellationToken))
+                using (var requestClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
                 {
                     var requestResult = await requestClient.Request(subject, cancellationToken);
                     Assert.Equal(reply, Encoding.UTF8.GetString(requestResult.Payload));
