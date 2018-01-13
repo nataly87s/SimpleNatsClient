@@ -141,9 +141,15 @@ namespace SimpleNatsClient
             Connection.Dispose();
         }
 
-        public static async Task<NatsClient> Connect(NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        public static Task<NatsClient> Connect(string hostname = "localhost", int port = 4222, NatsOptions options = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var natsConnection = await NatsConnection.Connect(options, cancellationToken);
+            return Connect(new[] {(hostname, port)}, options, cancellationToken);
+        }
+
+        public static async Task<NatsClient> Connect((string Hostname, int Port)[] servers, NatsOptions options = null, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            options = options ?? new NatsOptions();
+            var natsConnection = await NatsConnection.Connect(servers, options, cancellationToken);
             return new NatsClient(natsConnection);
         }
     }

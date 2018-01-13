@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -25,6 +28,7 @@ namespace SimpleNatsClient.Connection
         private readonly NatsParser _parser = new NatsParser();
         private readonly TcpConnectionProvider _tcpConnectionProvider;
         private readonly NatsOptions _options;
+        private readonly (string Hostname, int Port)[] _servers;
         private ITcpConnection _tcpConnection;
         private IDisposable _readFromStream;
 
@@ -38,8 +42,19 @@ namespace SimpleNatsClient.Connection
             ? _onConnect.StartWith(ServerInfo)
             : _onConnect;
 
-        internal NatsConnection(TcpConnectionProvider tcpConnectionProvider, NatsOptions options)
+        internal NatsConnection((string Hostname, int Port)[] servers, TcpConnectionProvider tcpConnectionProvider, NatsOptions options)
         {
+            if (servers == null)
+            {
+                throw new ArgumentNullException(nameof(servers));
+            }
+
+            if (servers.Length == 0)
+            {
+                throw new ArgumentException("server list should contain at least one server", nameof(servers));
+            }
+
+            _servers = servers;
             _tcpConnectionProvider = tcpConnectionProvider;
             _options = options;
 
@@ -110,12 +125,24 @@ namespace SimpleNatsClient.Connection
             _tcpConnection?.Dispose();
             _parser.Reset();
 
+            var uniqServers = new HashSet<(string Hostname, int Port)>(_servers);
+            
+            if (_options.ConnectionOptions.Protocol == 1 && ServerInfo?.ConnectUrls != null)
+            {
+                uniqServers.UnionWith(ServerInfo.ConnectUrls.Select(x => x.Split(':'))
+                    .Select(x => (x[0], int.Parse(x[1]))));
+            }
+
+            var servers = uniqServers.ToArray();
+            
             var i = 0;
+            var nextServer = 0;
             while (true)
             {
                 try
                 {
-                    _tcpConnection = _tcpConnectionProvider(_options.Hostname, _options.Port);
+                    var server = servers[nextServer];
+                    _tcpConnection = _tcpConnectionProvider(server.Hostname, server.Port);
                     break;
                 }
                 catch
@@ -123,7 +150,9 @@ namespace SimpleNatsClient.Connection
                     if (i < _options.MaxConnectRetry)
                     {
                         i++;
+                        nextServer = (nextServer + 1) % servers.Length;
                         await Task.Delay(_options.ConnectRetryDelay, cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
                         continue;
                     }
 
@@ -169,16 +198,24 @@ namespace SimpleNatsClient.Connection
             _disposable.Dispose();
         }
 
-        internal static async Task<NatsConnection> Connect(TcpConnectionProvider tcpConnectionProvider, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        internal static async Task<NatsConnection> Connect((string Hostname, int Port)[] servers, TcpConnectionProvider tcpConnectionProvider, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var connection = new NatsConnection(tcpConnectionProvider, options);
+            var connection = new NatsConnection(servers, tcpConnectionProvider, options);
             await connection.Connect(cancellationToken);
             return connection;
         }
 
         public static Task<NatsConnection> Connect(NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return Connect((host, port) => new TcpConnection(host, port), options, cancellationToken);
+            return Connect("localhost", 4222, options, cancellationToken);
+        }
+        public static Task<NatsConnection> Connect(string hostname, int port, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return Connect(new[] {(hostname, port)}, options, cancellationToken);
+        }
+        public static Task<NatsConnection> Connect((string Hostname, int Port)[] servers, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return Connect(servers, (h, p) => new TcpConnection(h, p), options, cancellationToken);
         }
     }
 }

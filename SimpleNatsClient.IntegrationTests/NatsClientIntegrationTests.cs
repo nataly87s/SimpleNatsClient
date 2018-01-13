@@ -12,19 +12,20 @@ namespace SimpleNatsClient.IntegrationTests
 {
     public class NatsClientIntegrationTests
     {
-        private static readonly bool _isCi = Environment.GetEnvironmentVariable("CI") == "true";
-        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);
         private const int SECONDARY_PORT = 4223;
-        
-        private static NatsOptions GetOptions(int port = 4222)
+        private static readonly bool _isCi = Environment.GetEnvironmentVariable("CI") == "true";
+        private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);        
+        private static readonly NatsOptions _natsOptions = new NatsOptions
         {
-            return new NatsOptions
-            {
-                Hostname = _isCi ? $"nats-{port - 4222}" : "localhost",
-                Port = port,
-                ConnectRetryDelay = TimeSpan.FromMilliseconds(10),
-                MaxConnectRetry = 3,
-            };
+            ConnectRetryDelay = TimeSpan.FromMilliseconds(10),
+            MaxConnectRetry = 3,
+        };
+
+        private static async Task<NatsClient> Connect(int port = 4222)
+        {
+            var hostname = _isCi ? $"nats-{port - 4222}" : "localhost";
+            var cancellationToken = new CancellationTokenSource(_timeout).Token;
+            return await NatsClient.Connect(hostname, port, _natsOptions, cancellationToken);
         }
         
         [Fact]
@@ -33,19 +34,20 @@ namespace SimpleNatsClient.IntegrationTests
             const string subject = "some_subject";
             string[] payloads = {"some payload", "some other payload"};
 
-            var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
+            using (var subscribeClient = await Connect(SECONDARY_PORT))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject)
                     .Take(payloads.Length)
-                    .ToArray().ToTask(cancellationToken);
+                    .ToArray()
+                    .Timeout(_timeout)
+                    .ToTask();
 
-                using (var publishClient = await NatsClient.Connect(GetOptions(), cancellationToken))
+                using (var publishClient = await Connect())
                 {
                     foreach (var payload in payloads)
                     {
-                        await publishClient.Publish(subject, payload, cancellationToken);
-                        await Task.Delay(1, cancellationToken); // TODO: check why the test fails without the delay
+                        await publishClient.Publish(subject, payload, new CancellationTokenSource(_timeout).Token);
+                        await Task.Delay(1); // TODO: check why the test fails without the delay
                     }
                 }
 
@@ -62,19 +64,19 @@ namespace SimpleNatsClient.IntegrationTests
         {
             const string subject = "some_subject";
             string[] payloads = {"some payload", "some other payload"};
-            var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
+            using (var subscribeClient = await Connect(SECONDARY_PORT))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject, 1)
                     .ToArray()
-                    .ToTask(cancellationToken);
+                    .Timeout(_timeout)
+                    .ToTask();
 
-                using (var publishClient = await NatsClient.Connect(GetOptions(), cancellationToken))
+                using (var publishClient = await Connect())
                 {
                     foreach (var payload in payloads)
                     {
-                        await publishClient.Publish(subject, payload, cancellationToken);
-                        await Task.Delay(1, cancellationToken);
+                        await publishClient.Publish(subject, payload, new CancellationTokenSource(_timeout).Token);
+                        await Task.Delay(1);
                     }
                 }
 
@@ -90,17 +92,16 @@ namespace SimpleNatsClient.IntegrationTests
         {
             const string subject = "some_subject";
             const string reply = "some reply";
-            var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
+            using (var subscribeClient = await Connect(SECONDARY_PORT))
             {
                 var subscription = subscribeClient.GetSubscription(subject, 1)
                     .SelectMany(message =>
                         Observable.FromAsync(ct => subscribeClient.Publish(message.ReplyTo, reply, ct)));
 
                 using (subscription.Subscribe())
-                using (var requestClient = await NatsClient.Connect(GetOptions(), cancellationToken))
+                using (var requestClient = await Connect())
                 {
-                    var requestResult = await requestClient.Request(subject, cancellationToken);
+                    var requestResult = await requestClient.Request(subject, new CancellationTokenSource(_timeout).Token);
                     Assert.Equal(reply, Encoding.UTF8.GetString(requestResult.Payload));
                 }
             }

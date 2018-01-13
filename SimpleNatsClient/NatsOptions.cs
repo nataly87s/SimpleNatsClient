@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-using Newtonsoft.Json;
 using SimpleNatsClient.Connection;
 
 namespace SimpleNatsClient
@@ -9,15 +8,11 @@ namespace SimpleNatsClient
     public class NatsOptions
     {
         public NatsOptions() : this(new NatsConnectionOptions()) { }
-        
+
         public NatsOptions(NatsConnectionOptions connectionOptions)
         {
             ConnectionOptions = connectionOptions;
         }
-        
-        public string Hostname { get; set; } = "localhost";
-
-        public int Port { get; set; } = 4222;
 
         public TimeSpan PingTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
@@ -26,7 +21,7 @@ namespace SimpleNatsClient
         public int MaxConnectRetry { get; set; } = 10;
 
         public TimeSpan ConnectRetryDelay { get; set; } = TimeSpan.FromSeconds(5);
-        
+
         public NatsConnectionOptions ConnectionOptions { get; }
 
         public RemoteCertificateValidationCallback RemoteCertificateValidationCallback { get; set; } = RemoteCertificateValidation;
