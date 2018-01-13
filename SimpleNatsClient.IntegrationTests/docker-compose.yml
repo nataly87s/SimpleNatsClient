@@ -1,7 +1,13 @@
 version: '3.4'
 
 services:
-  nats:
+  nats-main:
     image: nats:1.0.4-linux
     ports: 
       - "4222:4222"
+      
+  nats-secondary:
+    image: nats:1.0.4-linux
+    command: -p 4223 -c gnatsd.conf --routes=nats-route://ruser:T0pS3cr3t@nats-main:6222
+    ports: 
+      - "4223:4223"

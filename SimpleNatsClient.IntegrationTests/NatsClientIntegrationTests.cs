@@ -5,7 +5,6 @@ using System.Reactive.Threading.Tasks;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using SimpleNatsClient.Connection;
 using SimpleNatsClient.Extensions;
 using Xunit;
 
@@ -13,8 +12,21 @@ namespace SimpleNatsClient.IntegrationTests
 {
     public class NatsClientIntegrationTests
     {
+        private static readonly bool _isCi = Environment.GetEnvironmentVariable("CI") == "true";
         private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);
-
+        private const int SECONDARY_PORT = 4223;
+        
+        private static NatsOptions GetOptions(int port = 4222)
+        {
+            return new NatsOptions
+            {
+                Hostname = _isCi ? $"nats-{port - 4222}" : "localhost",
+                Port = port,
+                ConnectRetryDelay = TimeSpan.FromMilliseconds(10),
+                MaxConnectRetry = 3,
+            };
+        }
+        
         [Fact]
         public async Task PublishSubscribe()
         {
@@ -22,13 +34,13 @@ namespace SimpleNatsClient.IntegrationTests
             string[] payloads = {"some payload", "some other payload"};
 
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject)
                     .Take(payloads.Length)
                     .ToArray().ToTask(cancellationToken);
 
-                using (var publishClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+                using (var publishClient = await NatsClient.Connect(GetOptions(), cancellationToken))
                 {
                     foreach (var payload in payloads)
                     {
@@ -51,13 +63,13 @@ namespace SimpleNatsClient.IntegrationTests
             const string subject = "some_subject";
             string[] payloads = {"some payload", "some other payload"};
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
             {
                 var messagesTask = subscribeClient.GetSubscription(subject, 1)
                     .ToArray()
                     .ToTask(cancellationToken);
 
-                using (var publishClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+                using (var publishClient = await NatsClient.Connect(GetOptions(), cancellationToken))
                 {
                     foreach (var payload in payloads)
                     {
@@ -79,14 +91,14 @@ namespace SimpleNatsClient.IntegrationTests
             const string subject = "some_subject";
             const string reply = "some reply";
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var subscribeClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+            using (var subscribeClient = await NatsClient.Connect(GetOptions(SECONDARY_PORT), cancellationToken))
             {
                 var subscription = subscribeClient.GetSubscription(subject, 1)
                     .SelectMany(message =>
                         Observable.FromAsync(ct => subscribeClient.Publish(message.ReplyTo, reply, ct)));
 
                 using (subscription.Subscribe())
-                using (var requestClient = await NatsClient.Connect(new NatsOptions(), cancellationToken))
+                using (var requestClient = await NatsClient.Connect(GetOptions(), cancellationToken))
                 {
                     var requestResult = await requestClient.Request(subject, cancellationToken);
                     Assert.Equal(reply, Encoding.UTF8.GetString(requestResult.Payload));

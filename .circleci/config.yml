@@ -4,6 +4,10 @@ jobs:
     docker:
       - image: microsoft/dotnet:2.0.5-sdk-2.1.4-stretch
       - image: nats:1.0.4-linux
+        name: nats-0
+      - image: nats:1.0.4-linux
+        name: nats-1
+        command: -p 4223 -c gnatsd.conf --routes=nats-route://ruser:T0pS3cr3t@nats-0:6222
     steps:
       - checkout
       - run: 
