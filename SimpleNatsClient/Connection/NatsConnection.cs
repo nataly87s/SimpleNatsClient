@@ -142,7 +142,7 @@ namespace SimpleNatsClient.Connection
                 try
                 {
                     var server = servers[nextServer];
-                    _tcpConnection = _tcpConnectionProvider(server.Hostname, server.Port);
+                    _tcpConnection = await _tcpConnectionProvider(server.Hostname, server.Port);
                     break;
                 }
                 catch
@@ -215,7 +215,12 @@ namespace SimpleNatsClient.Connection
         }
         public static Task<NatsConnection> Connect((string Hostname, int Port)[] servers, NatsOptions options, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return Connect(servers, (h, p) => new TcpConnection(h, p), options, cancellationToken);
+            return Connect(servers, async (h, p) =>
+            {
+                var connection = new TcpConnection(h, p);
+                await connection.Connect();
+                return connection;
+            }, options, cancellationToken);
         }
     }
 }
