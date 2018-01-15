@@ -17,6 +17,11 @@ namespace SimpleNatsClient.Tests
         private static readonly TimeSpan _timeout = TimeSpan.FromMilliseconds(500);
         private static readonly (string Hostname, int Port)[] _servers = {("localhost", 4222)};
 
+        private static TcpConnectionProvider GetProvider(ITcpConnection tcpConnection = null)
+        {
+            return (h, p) => Task.FromResult(tcpConnection ?? new MockTcpConnection());
+        }
+
         [Fact(DisplayName = "should send connect message after recieving info message")]
         public async Task ConnectAfterInfo()
         {
@@ -25,7 +30,7 @@ namespace SimpleNatsClient.Tests
 
             var options = new NatsConnectionOptions();
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect(_servers, (h, p) => tcpConnection, new NatsOptions(options), cancellationToken))
+            using (var connection = await NatsConnection.Connect(_servers, GetProvider(tcpConnection), new NatsOptions(options), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -53,7 +58,7 @@ namespace SimpleNatsClient.Tests
 
             var options = new NatsConnectionOptions {SslRequired = true};
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect(_servers, (h, p) => tcpConnection, new NatsOptions(options), cancellationToken))
+            using (var connection = await NatsConnection.Connect(_servers, GetProvider(tcpConnection), new NatsOptions(options), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).FirstAsync();
                 var connectionMessage = Encoding.UTF8.GetString(wrote);
@@ -84,7 +89,7 @@ namespace SimpleNatsClient.Tests
             tcpConnection.Queue.Enqueue(
                 Encoding.UTF8.GetBytes($"MSG {subject} {subscription} {replyTo} {size}\r\n{expectedMessage}\r\n"));
 
-            using (var connection = new NatsConnection(_servers, (h, p) => tcpConnection, new NatsOptions()))
+            using (var connection = new NatsConnection(_servers, GetProvider(tcpConnection), new NatsOptions()))
             {
                 var messageTask = connection.Messages.OfType<Message<IncomingMessage>>()
                     .Timeout(_timeout)
@@ -111,7 +116,7 @@ namespace SimpleNatsClient.Tests
             var tcpConnection = new MockTcpConnection();
             var expectedMessage = Encoding.UTF8.GetBytes("some message");
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect(_servers, (h, p) => tcpConnection, new NatsOptions(), cancellationToken))
+            using (var connection = await NatsConnection.Connect(_servers, GetProvider(tcpConnection), new NatsOptions(), cancellationToken))
             {
                 await connection.Write(expectedMessage, CancellationToken.None);
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
@@ -129,7 +134,7 @@ namespace SimpleNatsClient.Tests
             tcpConnection.Queue.Enqueue(Encoding.UTF8.GetBytes("PING\r\n"));
 
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (await NatsConnection.Connect(_servers, (h, p) => tcpConnection, new NatsOptions(), cancellationToken))
+            using (await NatsConnection.Connect(_servers, GetProvider(tcpConnection), new NatsOptions(), cancellationToken))
             {
                 var wrote = await tcpConnection.OnWrite.Timeout(_timeout).Take(2).LastAsync();
                 var pongMessage = Encoding.UTF8.GetString(wrote);
@@ -150,7 +155,7 @@ namespace SimpleNatsClient.Tests
                 PingPongInterval = TimeSpan.FromMilliseconds(5),
             };
             var cancellationToken = new CancellationTokenSource(_timeout).Token;
-            using (var connection = await NatsConnection.Connect(_servers, (h, p) => new MockTcpConnection(), options, cancellationToken))
+            using (var connection = await NatsConnection.Connect(_servers, GetProvider(), options, cancellationToken))
             {
                 var connectionCount = await connection.OnConnect
                     .Take(reconnectCount)
@@ -174,11 +179,11 @@ namespace SimpleNatsClient.Tests
 
             var currentRetryCount = 0;
 
-            ITcpConnection Provider(string h, int p)
+            Task<ITcpConnection> Provider(string h, int p)
             {
                 try
                 {
-                    if (currentRetryCount == retryCount) return new MockTcpConnection();
+                    if (currentRetryCount == retryCount) return Task.FromResult<ITcpConnection>(new MockTcpConnection());
                     throw new Exception();
                 }
                 finally
@@ -209,11 +214,11 @@ namespace SimpleNatsClient.Tests
 
             var currentRetryCount = 0;
 
-            ITcpConnection Provider(string h, int p)
+            Task<ITcpConnection> Provider(string h, int p)
             {
                 try
                 {
-                    if (currentRetryCount > maxRetry) return new MockTcpConnection();
+                    if (currentRetryCount > maxRetry) return Task.FromResult<ITcpConnection>(new MockTcpConnection());
                     throw new Exception();
                 }
                 finally
@@ -246,12 +251,13 @@ namespace SimpleNatsClient.Tests
 
             var connectRequests = new List<string>();
 
-            ITcpConnection Provider(string h, int p)
+            Task<ITcpConnection> Provider(string h, int p)
             {
                 if (h == "localhost" && connectRequests.Count > 0) throw new Exception();
 
                 connectRequests.Add($"{h}:{p}");
-                return new MockTcpConnection(new ServerInfo {ConnectUrls = new[] {expectedServer}});
+                var tcpConnection = new MockTcpConnection(new ServerInfo {ConnectUrls = new[] {expectedServer}});
+                return Task.FromResult<ITcpConnection>(tcpConnection);
             }
 
             var cancellationToken = new CancellationTokenSource(_timeout).Token;

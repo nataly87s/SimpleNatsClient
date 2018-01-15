@@ -12,16 +12,24 @@ namespace SimpleNatsClient.Connection
     internal class TcpConnection : ITcpConnection
     {
         private readonly string _hostname;
+        private readonly int _port;
         private Stream _stream;
         private bool _isSsl;
-        private readonly CompositeDisposable _disposable;
+        private readonly CompositeDisposable _disposable = new CompositeDisposable();
 
         public TcpConnection(string hostname = "localhost", int port = 4222)
         {
             _hostname = hostname;
-            var client = new TcpClient(_hostname, port);
+            _port = port;
+        }
+
+        public async Task Connect()
+        {
+            var client = new TcpClient();
+            _disposable.Add(client);
+            await client.ConnectAsync(_hostname, _port);
             _stream = client.GetStream();
-            _disposable = new CompositeDisposable(client, _stream);
+            _disposable.Add(_stream);
         }
 
         public async Task MakeSsl(RemoteCertificateValidationCallback remoteCertificateValidationCallback, X509Certificate2Collection certificates)
