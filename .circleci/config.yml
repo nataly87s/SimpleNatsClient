@@ -14,12 +14,19 @@ jobs:
           name: Build solution
           command: |
             dotnet restore
-            dotnet build
+            dotnet build -c Release --version-suffix $CIRCLE_BUILD_NUM
       - run:
           name: Unit Tests
           working_directory: ./SimpleNatsClient.Tests
-          command: dotnet test --no-build
+          command: dotnet test --no-build -c Release
       - run:
           name: Integration Tests
           working_directory: ./SimpleNatsClient.IntegrationTests
-          command: dotnet test --no-build
+          command: dotnet test --no-build -c Release
+      - run:
+          name: Deploy Nuget
+          working_directory: ./SimpleNatsClient
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              dotnet nuget push ./bin/Release/SimpleNatsClient\*.nupkg -s nuget.org -k $NUGET_APIKEY
+            fi
