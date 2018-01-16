@@ -58,7 +58,9 @@ namespace SimpleNatsClient.Connection
                     {
                         _state = State.Payload;
                         _nextMessage = message;
-                        _expectedPayloadSize = int.Parse(message.Split(' ').Last());
+
+                        var lastSpace = message.LastIndexOf(' ');
+                        _expectedPayloadSize = int.Parse(message.Substring(lastSpace));
                         _nextPayload = new byte[_expectedPayloadSize];
                         Parse(buffer, i + 1, count - i - 1);
                         return;
