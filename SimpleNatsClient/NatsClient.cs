@@ -20,6 +20,8 @@ namespace SimpleNatsClient
         private readonly IObservable<IncomingMessage> _inbox;
         private readonly string _inboxPrefix = $"_INBOX.{Guid.NewGuid():N}.";
 
+        private long _inboxSuffix = 0;
+
         public INatsConnection Connection { get; }
 
         public NatsClient(INatsConnection connection)
@@ -34,7 +36,7 @@ namespace SimpleNatsClient
 
         public string NewInbox()
         {
-            return _inboxPrefix + Guid.NewGuid().ToString("N");
+            return _inboxPrefix + Interlocked.Increment(ref _inboxSuffix);
         }
 
         public Task Publish(string subject, CancellationToken cancellationToken = default(CancellationToken))
