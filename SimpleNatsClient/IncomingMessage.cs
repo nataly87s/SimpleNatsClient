@@ -4,6 +4,8 @@ namespace SimpleNatsClient
 {
     public class IncomingMessage
     {
+        private static readonly byte[] EmptyPayload = new byte[0];
+
         public string Subject { get; }
         public string SubscriptionId { get; }
         public string ReplyTo { get; }
@@ -12,12 +14,24 @@ namespace SimpleNatsClient
 
         public IncomingMessage(string data, byte[] payload)
         {
-            Payload = payload ?? new byte[0];
-            var parts = data.Split(' ');
-            Subject = parts[0];
-            SubscriptionId = parts[1];
-            ReplyTo = parts.Length == 4 ? parts[2] : string.Empty;
-            Size = int.Parse(parts.Last());
+            Payload = payload ?? EmptyPayload;
+
+            // SUBJECT SID[ REPLYTO] SIZE
+            var subjectEnd = data.IndexOf(' ');
+            Subject = data.Substring(0, subjectEnd);
+            var subscriptionIdEnd = data.IndexOf(' ', subjectEnd + 1);
+            SubscriptionId = data.Substring(subjectEnd + 1, subscriptionIdEnd - subjectEnd - 1);
+
+            var sizeOnlyIfMissing = data.IndexOf(' ', subscriptionIdEnd + 1);
+            if (sizeOnlyIfMissing < 0)
+            {
+                Size = int.Parse(data.Substring(subscriptionIdEnd + 1));
+            }
+            else
+            {
+                ReplyTo = data.Substring(subscriptionIdEnd + 1, sizeOnlyIfMissing - subscriptionIdEnd - 1);
+                Size = int.Parse(data.Substring(sizeOnlyIfMissing + 1));
+            }
         }
 
         public IncomingMessage(string subject, string subscriptionId, string replyTo, int size, byte[] payload)
@@ -26,7 +40,7 @@ namespace SimpleNatsClient
             SubscriptionId = subscriptionId;
             ReplyTo = replyTo;
             Size = size;
-            Payload = payload ?? new byte[0];
+            Payload = payload ?? EmptyPayload;
         }
     }
 }
