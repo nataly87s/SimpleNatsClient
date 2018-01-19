@@ -90,14 +90,13 @@ namespace SimpleNatsClient.Connection
 
             var reconnect = OnConnect
                 .Select(_ => Observable.FromAsync(ct => Write(Ping, ct))
+                    .SelectMany(Messages.FirstAsync(m => m.Op == PongOp).Timeout(options.PingTimeout))
                     .DelaySubscription(options.PingPongInterval)
-                    .SelectMany(Messages)
-                    .FirstAsync(m => m.Op == PongOp)
-                    .Timeout(options.PingTimeout)
+                    .Retry(1)
                     .Repeat()
                     .IgnoreElements()
                     .Select(__ => Unit.Default)
-                    .Catch()                    
+                    .Catch()
                     .Concat(Observable.FromAsync(Connect)))
                 .Switch()
                 .Catch()
