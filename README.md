@@ -57,8 +57,8 @@ async Task Reply(string subject)
     using (var connection = await NatsClient.Connect())
     {
         var subscription = connection.GetSubscription(subject);
-        await subscription.FirstAsync()
-            .SelectMany(message => Observable.FromAsync(ct => connection.Publish(message.ReplyTo, "answer", ct)));
+        var request = await subscription.FirstAsync();
+        await connection.Publish(request.ReplyTo, "answer");
     }
 }
 ```
