@@ -63,6 +63,10 @@ namespace SimpleNatsClient
             if (dataLength > 0) data.CopyTo(encoded, encodedMessage.Length + NewLine.Length);
             NewLine.CopyTo(encoded, encoded.Length - NewLine.Length);
 
+            if (Connection.ConnectionState == NatsConnectionState.Connecting)
+            {
+                await Connection.OnConnect.FirstAsync().ToTask(cancellationToken);
+            }
             await Connection.Write(encoded, cancellationToken);
         }
 
